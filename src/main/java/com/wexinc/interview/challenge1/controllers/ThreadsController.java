@@ -29,6 +29,7 @@ public class ThreadsController {
 	private AuthManager authManager;
 	private Logger logger;
 	private ThreadRepo threadRepo;
+	private static final String AUTH_TOKEN_NAME = "X-WEX-AuthToken";
 
 	@Inject
 	public ThreadsController(final ThreadRepo threadRepo, final AuthManager authManager) {
@@ -49,8 +50,14 @@ public class ThreadsController {
 				json());
 
 		get(Path.OneThread, (req, resp) -> {
-			final int threadId = Integer.parseInt(req.params(":threadId"));
-			return threadRepo.get(threadId);
+			// This is the fix for Issue 1
+			try {
+				final int threadId = Integer.parseInt(req.params(":threadId"));
+				return threadRepo.get(threadId);
+			} catch (NumberFormatException e) {
+				resp.status(404);
+				return "404 Internal Server Error: Thread ID of " + req.params(":threadId") + " is not a number!";
+			}
 		}, json());
 
 		post(Path.ThreadList, handleMessagePost, json());
@@ -63,7 +70,7 @@ public class ThreadsController {
 			return "";
 		}
 
-		final String authToken = req.headers("X-WEX-AuthToken");
+		final String authToken = req.headers(AUTH_TOKEN_NAME);
 		final AuthorizationToken token = authManager.verifyAuthToken(authToken);
 		MsgThread thread;
 		if (message.getThreadId() == 0) {
@@ -71,6 +78,9 @@ public class ThreadsController {
 		} else {
 			thread = threadRepo.createMessage(message.getThreadId(), token.getUserId(), message.getText());
 		}
+
+		// This is the fix for issue 2
+		resp.header(AUTH_TOKEN_NAME, authManager.rotateAuthToken(token).getAuthToken());
 
 		return new PostSuccessResponse(thread.getId());
 	};
